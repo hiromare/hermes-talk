@@ -52,3 +52,21 @@ def check_task(request, task):
     fence = requested_fence(request)
     if fence is not None and (task.get("session_id"), task.get("profile")) != fence:
         raise DashboardTaskError("context_denied", 403)
+
+
+def verify_host(request, manager):
+    try:
+        from .talk_dashboard_gateway import TaskGateway
+        from .talk_passive import HistoryCapabilities
+    except ImportError:
+        from talk_dashboard_gateway import TaskGateway
+        from talk_passive import HistoryCapabilities
+    context = manager.resolve_context(request)
+    transport = manager.transport_factory(context)
+    gateway = TaskGateway(transport)
+    gateway.require_local()
+    gateway.require_child(gateway.capabilities())
+    proof = transport.request("capabilities")
+    HistoryCapabilities.parse(proof)
+    if proof.get("store_id") != context.store_id:
+        raise DashboardTaskError("catalog_host_unverified", 503)

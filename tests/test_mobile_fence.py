@@ -61,3 +61,25 @@ def test_registry_refuses_api_provider_before_negotiation_even_without_headers(t
 def test_direct_join_rejects_different_task_before_gateway_join():
     with pytest.raises(DashboardTaskError):
         talk_mobile.check_task(request(), {"session_id": "other", "profile": "default"})
+
+
+def test_readiness_requires_real_history_store_and_linked_dispatch_support(tmp_path):
+    from test_dashboard_tasks import environment
+    manager, req, _, _ = environment.__wrapped__(tmp_path)
+    talk_mobile.verify_host(req, manager)
+    from dataclasses import replace
+    changed = replace(manager.resolve_context(req), store_id="different-store")
+    manager.resolve_context = lambda request: changed
+    with pytest.raises(DashboardTaskError):
+        talk_mobile.verify_host(req, manager)
+
+
+def test_mobile_readiness_refuses_a_host_without_task_context(monkeypatch):
+    import asyncio
+    from test_dashboard_api import api, FakeRequest
+    monkeypatch.setattr(api, "_require_dashboard_auth", lambda request: None)
+    monkeypatch.setattr(api.talk_live_config, "resolve_live_config", lambda: LiveConfig())
+    monkeypatch.setattr(api.talk_dashboard_tasks, "context_support", lambda: {"supported": False})
+    with pytest.raises(api.HTTPException) as failure:
+        asyncio.run(api.mobile_status(FakeRequest()))
+    assert failure.value.status_code == 503

@@ -476,11 +476,14 @@ async def mobile_status(request: Request) -> dict:
     require_dashboard_auth(request)
     try:
         config = talk_live_config.resolve_live_config()
+        if not talk_dashboard_tasks.context_support().get("supported"):
+            raise DashboardTaskError("context_unavailable", 503)
+        await asyncio.to_thread(talk_mobile.verify_host, request, TASKS)
         if _resolve_voice_mode() != "live":
             raise DashboardTaskError("context_denied", 403)
         talk_mobile.check_config(config)
         auth = await asyncio.to_thread(talk_live_config.resolve_live_auth, config=config)
-    except (DashboardTaskError, talk_live_config.LiveConfigError, talk_auth.TalkAuthError) as exc:
+    except (DashboardTaskError, HistoryError, talk_live_config.LiveConfigError, talk_auth.TalkAuthError) as exc:
         raise HTTPException(status_code=503, detail="Existing-chat subscription voice is unavailable.") from exc
     return {"ok": True, "contract": 1, "auth": config.auth_mode,
             "source": auth.source, "existingChatOnly": True}

@@ -1,6 +1,7 @@
 const originalSDK = window.__HERMES_PLUGIN_SDK__;
-const params = new URLSearchParams(window.location.search);
-const mobile = params.get("hermesMobile") === "1";
+const search = window.location?.search || "";
+const mobile = /(?:^|[?&])hermesMobile=1(?:&|$)/.test(search);
+const params = mobile ? new URLSearchParams(search) : null;
 let SDK = originalSDK;
 if (mobile && originalSDK) {
   const session = params.get("mobileSession") || "";

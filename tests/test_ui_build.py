@@ -291,3 +291,31 @@ assert(closes.every(row=>row.body.connection_id==='bound-live-task'));
 assert.equal(closes[0].body.binding_id,'opaque-live');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """, ROOT / "dashboard/dist/index.js")
+
+
+def test_mobile_entry_preserves_exact_owner_and_enforces_subscription_requests():
+    script = r"""
+const vm = require('vm'), fs = require('fs'), assert = require('assert');
+let wrapped; const calls=[];
+const sdk={fetchJSON:async(path,opts)=>{calls.push({path,opts});return {
+  ok:true,contract:1,auth:'subscription',source:'codex-app-server',existingChatOnly:true};}};
+const context={URLSearchParams,window:{location:{search:
+  '?hermesMobile=1&mobileSession=task-a&mobileProfile=default'},
+  __HERMES_PLUGIN_SDK__:sdk,__HERMES_PLUGINS__:{register(){}}},
+  createTalkSurface(value){wrapped=value;return {TalkPage(){}};}};
+vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),context);
+(async()=>{
+assert.equal(wrapped.desktopOwner.storedSessionId,'task-a');
+assert.equal(wrapped.desktopOwner.profile,'default');
+await wrapped.fetchJSON('/session',{method:'POST'});
+assert.equal(calls[0].opts.headers['x-talk-mobile'],'1');
+assert.equal(calls[0].opts.headers['x-talk-mobile-session'],'task-a');
+await assert.rejects(()=>wrapped.validateVoiceMode({voiceMode:'live',liveAuth:'api'}));
+assert.equal(calls.length,1);
+await wrapped.validateVoiceMode({voiceMode:'live',liveAuth:'subscription',source:'codex-app-server'});
+assert.equal(calls[1].path,'/api/plugins/hermes-talk/mobile/status');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+    result = run(["node", "-e", script, str(ROOT / "ui/dashboard-entry.js")],
+                 capture_output=True, text=True, timeout=NODE_TIMEOUT_S)
+    assert result.returncode == 0, result.stdout + result.stderr

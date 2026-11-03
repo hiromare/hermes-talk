@@ -498,7 +498,7 @@ async def mobile_status(request: Request) -> dict:
     except (DashboardTaskError, HistoryError, talk_live_config.LiveConfigError, talk_auth.TalkAuthError) as exc:
         raise HTTPException(status_code=503, detail="Existing-chat subscription voice is unavailable.") from exc
     return {"ok": True, "contract": 1, "auth": config.auth_mode,
-            "source": auth.source, "existingChatOnly": True}
+            "source": auth.source, "existingChatOnly": True, "existing_chat_only": True}
 
 
 @router.get("/status")

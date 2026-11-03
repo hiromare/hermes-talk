@@ -112,3 +112,19 @@ def test_mobile_host_refusal_is_not_replaced_by_legacy_auth(monkeypatch):
     with pytest.raises(api.HTTPException) as denied:
         api.require_dashboard_auth(req)
     assert denied.value.status_code == 403
+
+
+def test_mobile_descriptor_supports_android_snake_case_decoder(monkeypatch):
+    import asyncio
+    from test_dashboard_api import api, FakeRequest
+    monkeypatch.setattr(api, "require_dashboard_auth", lambda request: None)
+    monkeypatch.setattr(api.talk_live_config, "resolve_live_config", lambda: LiveConfig())
+    monkeypatch.setattr(api.talk_dashboard_tasks, "context_support", lambda: {"supported": True})
+    monkeypatch.setattr(api.talk_mobile, "verify_host", lambda request, manager: None)
+    monkeypatch.setattr(api, "_resolve_voice_mode", lambda: "live")
+    monkeypatch.setattr(api.talk_live_config, "resolve_live_auth",
+                        lambda **kwargs: SimpleNamespace(source="codex-app-server"))
+    descriptor = asyncio.run(api.mobile_status(FakeRequest()))
+    assert descriptor["existingChatOnly"] is True
+    assert descriptor.get("existing_chat_only") is True
+    assert descriptor["auth"] == "subscription"

@@ -83,3 +83,32 @@ def test_mobile_readiness_refuses_a_host_without_task_context(monkeypatch):
     with pytest.raises(api.HTTPException) as failure:
         asyncio.run(api.mobile_status(FakeRequest()))
     assert failure.value.status_code == 503
+
+
+def test_mobile_uses_verified_host_context_without_copying_native_credentials(monkeypatch):
+    from test_dashboard_api import api, FakeRequest
+    req = FakeRequest(headers={"x-talk-mobile": "1", "x-talk-mobile-session": "task-a",
+                               "x-talk-mobile-profile": "default"})
+    req.state = SimpleNamespace(hosted_http_authenticated=True)
+    observed = []
+    monkeypatch.setattr(api.talk_dashboard_tasks, "resolve_context",
+                        lambda request, profile: observed.append(profile))
+    monkeypatch.setattr(api, "_require_dashboard_auth", lambda request: pytest.fail("native secret bridge used"))
+    monkeypatch.setattr(api, "_resolve_voice_mode", lambda: "live")
+    monkeypatch.setattr(api.talk_live_config, "resolve_live_config", lambda: LiveConfig())
+    api.require_dashboard_auth(req)
+    assert observed == ["default"]
+
+
+def test_mobile_host_refusal_is_not_replaced_by_legacy_auth(monkeypatch):
+    from test_dashboard_api import api, FakeRequest
+    req = FakeRequest(headers={"x-talk-mobile": "1", "x-talk-mobile-session": "task-a",
+                               "x-talk-mobile-profile": "default"})
+    req.state = SimpleNamespace(hosted_http_authenticated=True)
+    def refuse(request, profile):
+        raise DashboardTaskError("context_denied", 403)
+    monkeypatch.setattr(api.talk_dashboard_tasks, "resolve_context", refuse)
+    monkeypatch.setattr(api, "_require_dashboard_auth", lambda request: pytest.fail("auth fallback used"))
+    with pytest.raises(api.HTTPException) as denied:
+        api.require_dashboard_auth(req)
+    assert denied.value.status_code == 403

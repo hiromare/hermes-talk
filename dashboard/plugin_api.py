@@ -285,11 +285,23 @@ def _require_dashboard_auth(request) -> None:
 
 
 def require_dashboard_auth(request) -> None:
-    _require_dashboard_auth(request)
     try:
         fence = talk_mobile.requested_fence(request)
     except DashboardTaskError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail()) from exc
+    state = getattr(request, "state", None)
+    path = getattr(getattr(request, "url", None), "path", "")
+    mobile = fence is not None or path.endswith("/mobile/status")
+    trusted_host = (getattr(state, "hosted_http_authenticated", False) is True
+                    or getattr(state, "session", None) is not None
+                    or getattr(state, "native_http_principal", None) is not None)
+    if mobile and trusted_host:
+        try:
+            talk_dashboard_tasks.resolve_context(request, fence[1] if fence else None)
+        except DashboardTaskError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail()) from exc
+    else:
+        _require_dashboard_auth(request)
     if fence is not None:
         if _resolve_voice_mode() != "live":
             raise HTTPException(status_code=403, detail="Mobile voice requires GPT-Live subscription mode.")

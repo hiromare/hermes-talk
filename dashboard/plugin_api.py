@@ -65,6 +65,7 @@ import talk_input_attachments  # noqa: E402
 import talk_live_config  # noqa: E402
 import talk_live_routes  # noqa: E402
 import talk_native_surface  # noqa: E402
+import talk_mobile  # noqa: E402
 import talk_realtime  # noqa: E402
 import talk_recipients  # noqa: E402
 import talk_relay  # noqa: E402
@@ -257,7 +258,7 @@ def _has_desktop_auth(request, presented: str) -> bool:
     return True
 
 
-def require_dashboard_auth(request) -> None:
+def _require_dashboard_auth(request) -> None:
     """Gate one request. Returns on success, raises otherwise — never a bool.
 
     A bool would let a handler forget to check it; a raise cannot be ignored.
@@ -281,6 +282,21 @@ def require_dashboard_auth(request) -> None:
     if _is_loopback(request):
         return
     raise HTTPException(status_code=403, detail=LOOPBACK_ONLY_MESSAGE)
+
+
+def require_dashboard_auth(request) -> None:
+    _require_dashboard_auth(request)
+    try:
+        fence = talk_mobile.requested_fence(request)
+    except DashboardTaskError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail()) from exc
+    if fence is not None:
+        if _resolve_voice_mode() != "live":
+            raise HTTPException(status_code=403, detail="Mobile voice requires GPT-Live subscription mode.")
+        try:
+            talk_mobile.check_config(talk_live_config.resolve_live_config())
+        except (DashboardTaskError, talk_live_config.LiveConfigError) as exc:
+            raise HTTPException(status_code=403, detail="Mobile voice requires GPT-Live subscription mode.") from exc
 
 
 # -- helpers ------------------------------------------------------------------
@@ -455,6 +471,21 @@ def _resolve_voice(requested) -> str:
 # -- routes -------------------------------------------------------------------
 
 
+@router.get("/mobile/status")
+async def mobile_status(request: Request) -> dict:
+    require_dashboard_auth(request)
+    try:
+        config = talk_live_config.resolve_live_config()
+        if _resolve_voice_mode() != "live":
+            raise DashboardTaskError("context_denied", 403)
+        talk_mobile.check_config(config)
+        auth = await asyncio.to_thread(talk_live_config.resolve_live_auth, config=config)
+    except (DashboardTaskError, talk_live_config.LiveConfigError, talk_auth.TalkAuthError) as exc:
+        raise HTTPException(status_code=503, detail="Existing-chat subscription voice is unavailable.") from exc
+    return {"ok": True, "contract": 1, "auth": config.auth_mode,
+            "source": auth.source, "existingChatOnly": True}
+
+
 @router.get("/status")
 async def talk_status(request: Request) -> dict:
     """Readiness for the page: which auth lane, which model, which voices.
@@ -538,7 +569,9 @@ async def create_session(request: Request) -> dict:
         return await _target_session(request, body, initial=True)
     bound = None
     if "task" in body and body["task"] is not None:
+        await _task_call(talk_mobile.check_task, request, body["task"])
         bound = await _task_call(TASKS.join, request, body["task"])
+        await _task_call(lambda req, _: talk_mobile.check_bound(req, bound, attach=True), request, {})
     voice_mode = _resolve_voice_mode()
     if voice_mode == "live":
         if bound is None:
@@ -926,6 +959,8 @@ async def _task_call(function, request, body):
 async def _live_task_descriptor(bound, *, selection=None):
     try:
         config = talk_live_config.resolve_live_config()
+        if bound.mobile_fence is not None:
+            talk_mobile.check_config(config)
         auth = await asyncio.to_thread(talk_live_config.resolve_live_auth, config=config)
     except (talk_auth.TalkAuthError, talk_live_config.LiveConfigError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -1213,6 +1248,7 @@ TEXT_INPUT_ROUTE_HANDLERS = talk_text_input.mount_text_input_routes(
 
 
 ROUTE_HANDLERS = (
+    mobile_status,
     talk_status,
     create_session,
     run_tool,

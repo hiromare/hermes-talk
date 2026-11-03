@@ -199,6 +199,7 @@ class BoundDashboard:
     #: binding with no pins, so a stale reference cannot be replayed into it.
     input_attachments: dict = field(default_factory=dict)
     speech_timing: SpeechTiming | None = None
+    mobile_fence: tuple[str, str] | None = None
     native_surface: object = field(default=None, repr=False)
     capabilities_checked_at: float = field(default_factory=time.monotonic)
     joined_at: float = field(default_factory=time.time)
@@ -304,6 +305,11 @@ class DashboardTasks:
             or body["generation"] != bound.generation
         ):
             raise DashboardTaskError("connection_stale", 409)
+        try:
+            from .talk_mobile import check_bound
+        except ImportError:
+            from talk_mobile import check_bound
+        check_bound(request, bound)
         if bound.target_record is not None:
             if self.target_resolver is None or self.selection_guard is None:
                 raise DashboardTaskError("context_denied", 403)

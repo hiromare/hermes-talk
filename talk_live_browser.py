@@ -750,6 +750,11 @@ class LiveBrowserRegistry:
         browser = None
         try:
             config = resolve_live_config(self.env)
+            try:
+                from .talk_mobile import check_bound
+            except ImportError:
+                from talk_mobile import check_bound
+            check_bound(request, bound, config=config)
             auth = await asyncio.to_thread(resolve_live_auth, env=self.env, config=config)
             setup = await asyncio.to_thread(self.setup_factory, bound, config)
             async with asyncio.timeout(30):

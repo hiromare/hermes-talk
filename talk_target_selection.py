@@ -14,6 +14,11 @@ except ImportError:  # pragma: no cover - flat plugin load
     from talk_passive import HistoryError, identifier
     from talk_target_catalog import TargetCatalog
 
+try:
+    from . import talk_mobile
+except ImportError:
+    import talk_mobile
+
 SELECTION_TOOLS = frozenset({"list_targets", "switch_target", "return_to_previous"})
 
 
@@ -136,6 +141,7 @@ class TargetSelection:
                 resolved=resolved,
                 activate=False,
             )
+            talk_mobile.check_bound(request, bound, attach=True)
             return PreparedSelection(state, prepared, bound)
         except BaseException:
             state.cancel(prepared)
@@ -169,6 +175,8 @@ class TargetSelection:
     def tool(self, request, body):
         bound = self.manager.binding(request, body, write=True)
         name, arguments = body.get("name"), body.get("arguments")
+        if bound.mobile_fence is not None and name in {"switch_target", "return_to_previous"}:
+            raise DashboardTaskError("context_denied", 403)
         if (
             bound.target_record is None
             or name not in SELECTION_TOOLS

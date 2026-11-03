@@ -41,6 +41,7 @@ build-backend = "setuptools.build_meta"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 py-modules = [
   "talk_config",
+  "talk_mobile",
   "talk_live_audio",
   "talk_live_browser",
   "talk_live_codex",
